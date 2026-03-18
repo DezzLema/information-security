@@ -75,6 +75,88 @@ def runs_test(bit_sequence):
     return passed, statistic, msg
 
 
+def random_excursions_variant_test(bit_sequence):
+    """
+    Расширенный тест на произвольные отклонения (Random Excursions Variant Test).
+    Оценивает общее число посещений каждого из 18 состояний (-9...-1, 1...9)
+    при произвольном обходе кумулятивной суммы.
+    Возвращает: (passed, results_list, message)
+      passed       — True, если ВСЕ 18 статистик прошли порог
+      results_list — список кортежей (state, xi_j, Y_j, passed_j) для каждого состояния
+      message      — итоговая строка с описанием результата
+    """
+    n = len(bit_sequence)
+    if n == 0:
+        return False, [], "Последовательность пуста"
+
+    # Шаг 1: Преобразование 0/1 в -1/1
+    X = [2 * int(bit) - 1 for bit in bit_sequence]
+
+    # Шаг 2: Вычисление кумулятивных сумм S_i
+    cumulative = []
+    s = 0
+    for xi in X:
+        s += xi
+        cumulative.append(s)
+
+    # Шаг 3: Формирование последовательности S' = [0, S1, S2, ..., Sn, 0]
+    S_prime = [0] + cumulative + [0]
+
+    # Шаг 4: Вычисление L = (количество нулей в S') - 1
+    # L — число «циклов» (возвратов в 0)
+    zero_count = S_prime.count(0)
+    L = zero_count - 1  # вычитаем первый 0 (начальное состояние)
+
+    if L == 0:
+        return False, [], (
+            "Последовательность S' не содержит возвратов в 0 (L = 0). "
+            "Тест не применим — попробуйте более длинную последовательность."
+        )
+
+    # Шаг 5: Вычисление ξ_j — количество посещений каждого состояния j
+    # Состояния: -9, -8, ..., -1, 1, 2, ..., 9
+    states = list(range(-9, 0)) + list(range(1, 10))  # 18 состояний
+    xi = {j: 0 for j in states}
+    for val in S_prime:
+        if val in xi:
+            xi[val] += 1
+
+    # Шаг 6: Вычисление статистик Y_j для каждого состояния
+    # Y_j = |ξ_j - L| / sqrt(2 * L * (4 * |j| - 2))
+    results = []
+    all_passed = True
+    for j in states:
+        xi_j = xi[j]
+        denominator = math.sqrt(2 * L * (4 * abs(j) - 2))
+        if denominator == 0:
+            # Теоретически невозможно при L > 0, но защищаемся
+            Y_j = float('inf')
+            passed_j = False
+        else:
+            Y_j = abs(xi_j - L) / denominator
+            passed_j = Y_j <= THRESHOLD
+        if not passed_j:
+            all_passed = False
+        results.append((j, xi_j, Y_j, passed_j))
+
+    # Формирование итогового сообщения
+    msg = f"L (число циклов / возвратов в 0) = {L}\n\n"
+    msg += f"{'Состояние':>10}  {'ξ_j':>8}  {'Y_j':>12}  {'Результат'}\n"
+    msg += "-" * 52 + "\n"
+    for (j, xi_j, Y_j, passed_j) in results:
+        status = "Пройден" if passed_j else "НЕ пройден"
+        msg += f"{j:>10}  {xi_j:>8}  {Y_j:>12.6f}  {status}\n"
+
+    msg += "\n"
+    if all_passed:
+        msg += "Все 18 статистик прошли порог. Тест пройден."
+    else:
+        failed = [j for (j, _, _, p) in results if not p]
+        msg += f"Тест НЕ пройден. Статистики не прошли для состояний: {failed}"
+
+    return all_passed, results, msg
+
+
 # --- Вспомогательные функции ---
 
 def generate_sequence(length):
@@ -106,7 +188,6 @@ def save_sequence_to_file(sequence, filepath):
         return False
 
 
-
 def run_tests():
     """Запускает тесты в отдельном потоке, чтобы не блокировать GUI."""
     sequence = text_area.get("1.0", tk.END).strip()
@@ -118,42 +199,61 @@ def run_tests():
         messagebox.showerror("Ошибка", "Последовательность должна содержать только символы 0 и 1.")
         return
 
-    # Запуск тестирования в отдельном потоке
     def test_thread():
-        # Очистка и обновление статуса
+        # Очистка и инициализация области результатов
         result_text.config(state=tk.NORMAL)
         result_text.delete("1.0", tk.END)
         result_text.insert(tk.END, "Тестирование...\n")
         result_text.update()
         root.update()
 
-        # Имитация длительного процесса (если последовательность большая)
         time.sleep(0.1)
 
-        # Частотный тест
+        # ── Частотный тест ──────────────────────────────────────────────────
         freq_passed, freq_stat, freq_msg = frequency_test(sequence)
         result_text.insert(tk.END, "\n--- ЧАСТОТНЫЙ ТЕСТ ---\n")
         result_text.insert(tk.END, freq_msg + "\n")
 
-        # Если частотный тест не пройден, останавливаемся (по примечанию в лабораторной)
         if not freq_passed:
-            result_text.insert(tk.END, "\n⚠️ Частотный тест не пройден. Дальнейшие тесты не выполняются.\n")
+            result_text.insert(
+                tk.END,
+                "\n⚠️ Частотный тест не пройден. Дальнейшие тесты не выполняются.\n"
+            )
             result_text.config(state=tk.DISABLED)
             status_label.config(text="Статус: Готово (Частотный тест провален)")
             return
 
-        # Тест на последовательности одинаковых бит
+        # ── Тест на последовательности одинаковых бит ───────────────────────
         runs_passed, runs_stat, runs_msg = runs_test(sequence)
         result_text.insert(tk.END, "\n--- ТЕСТ НА ПОСЛЕДОВАТЕЛЬНОСТЬ ОДИНАКОВЫХ БИТ ---\n")
         result_text.insert(tk.END, runs_msg + "\n")
 
-        # Финальный вердикт
-        if freq_passed and runs_passed:
-            verdict = "Последовательность успешно прошла оба теста."
+        # ── Расширенный тест на произвольные отклонения ─────────────────────
+        status_label.config(text="Статус: Расширенный тест...")
+        root.update()
+
+        rev_passed, rev_results, rev_msg = random_excursions_variant_test(sequence)
+        result_text.insert(tk.END, "\n--- РАСШИРЕННЫЙ ТЕСТ НА ПРОИЗВОЛЬНЫЕ ОТКЛОНЕНИЯ ---\n")
+        result_text.insert(tk.END, rev_msg + "\n")
+
+        # ── Финальный вердикт ────────────────────────────────────────────────
+        all_ok = freq_passed and runs_passed and rev_passed
+        result_text.insert(tk.END, "\n" + "=" * 50 + "\n")
+        if all_ok:
+            result_text.insert(tk.END, "✅ Последовательность успешно прошла все три теста.\n")
         else:
-            verdict = "❌ Последовательность НЕ прошла один из тестов."
-        result_text.insert(tk.END, "\n" + "="*50 + "\n")
-        result_text.insert(tk.END, verdict + "\n")
+            failed_tests = []
+            if not freq_passed:
+                failed_tests.append("Частотный тест")
+            if not runs_passed:
+                failed_tests.append("Тест на цепочки")
+            if not rev_passed:
+                failed_tests.append("Расширенный тест")
+            result_text.insert(
+                tk.END,
+                f"❌ Последовательность НЕ прошла: {', '.join(failed_tests)}.\n"
+            )
+
         result_text.config(state=tk.DISABLED)
         status_label.config(text="Статус: Готово")
 
@@ -173,15 +273,16 @@ def generate_and_display():
         messagebox.showerror("Ошибка", "Длина последовательности должна быть положительным целым числом.")
         return
 
-    # Проверка на слишком большую длину для отображения
     if length > 100000:
-        if not messagebox.askyesno("Подтверждение", f"Вы хотите сгенерировать {length} бит. Отображение такого объема может замедлить программу. Продолжить?"):
+        if not messagebox.askyesno(
+            "Подтверждение",
+            f"Вы хотите сгенерировать {length} бит. Отображение такого объема может замедлить программу. Продолжить?"
+        ):
             return
 
     status_label.config(text="Статус: Генерация...")
     root.update()
 
-    # Генерация в отдельном потоке, чтобы не блокировать интерфейс
     def generate_thread():
         sequence = generate_sequence(length)
         text_area.delete("1.0", tk.END)
@@ -250,9 +351,9 @@ def clear_all():
     status_label.config(text="Статус: Готово")
 
 
-# gui
+# --- GUI ---
 root = tk.Tk()
-root.title("лаба 1")
+root.title("Лабораторная работа №1 — Тестирование ПСП")
 root.geometry("900x700")
 root.minsize(800, 600)
 
@@ -284,7 +385,7 @@ test_btn.pack(side=tk.LEFT, padx=20)
 main_frame = tk.Frame(root)
 main_frame.pack(fill=tk.BOTH, expand=True, padx=10, pady=5)
 
-# Левая часть - последовательность
+# Левая часть — последовательность
 left_frame = tk.Frame(main_frame)
 left_frame.pack(side=tk.LEFT, fill=tk.BOTH, expand=True)
 
@@ -292,12 +393,15 @@ tk.Label(left_frame, text="Последовательность (биты):").pa
 text_area = scrolledtext.ScrolledText(left_frame, wrap=tk.WORD, font=("Courier", 10))
 text_area.pack(fill=tk.BOTH, expand=True)
 
-# Правая часть - результаты тестов
-right_frame = tk.Frame(main_frame, width=350)
+# Правая часть — результаты тестов
+right_frame = tk.Frame(main_frame, width=400)
 right_frame.pack(side=tk.RIGHT, fill=tk.BOTH, expand=True, padx=(10, 0))
 
 tk.Label(right_frame, text="Результаты тестов:").pack(anchor=tk.W)
-result_text = scrolledtext.ScrolledText(right_frame, wrap=tk.WORD, state=tk.DISABLED, bg="#f0f0f0")
+result_text = scrolledtext.ScrolledText(
+    right_frame, wrap=tk.WORD, state=tk.DISABLED,
+    bg="#f0f0f0", font=("Courier", 9)
+)
 result_text.pack(fill=tk.BOTH, expand=True)
 
 # --- Нижняя панель статуса ---
