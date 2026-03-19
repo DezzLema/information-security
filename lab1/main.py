@@ -15,10 +15,9 @@ def frequency_test(bit_sequence):
     if n == 0:
         return False, 0, "Последовательность пуста"
 
-    # преобразование 0/1 в -1/1
     X = [2 * int(bit) - 1 for bit in bit_sequence]
 
-    # вычисление суммы Sn
+
     Sn = sum(X)
 
     # S = |Sn| / sqrt(n)
@@ -61,7 +60,7 @@ def runs_test(bit_sequence):
     msg = f"π (частота единиц) = {pi:.6f}\n"
     msg += f"Vn (количество цепочек) = {Vn}\n"
     msg += f"Статистика S = {statistic:.6f}. "
-    msg += "Тест пройден." if passed else "Тест НЕ пройден."
+    msg += "Тест пройден." if passed else "Тест не пройден."
     return passed, statistic, msg
 
 #Расширенный тест на произвольные отклонения
@@ -70,7 +69,6 @@ def random_excursions_variant_test(bit_sequence):
     if n == 0:
         return False, [], "Последовательность пуста"
 
-    # Преобразование 0/1 в -1/1
     X = [2 * int(bit) - 1 for bit in bit_sequence]
 
     # Вычисление кумулятивных сумм S_i
@@ -83,10 +81,9 @@ def random_excursions_variant_test(bit_sequence):
     # Формирование последовательности S' = [0, S1, S2, ..., Sn, 0]
     S_prime = [0] + cumulative + [0]
 
-    #Вычисление L = (количество нулей в S') - 1
-    # L — число «циклов» (возвратов в 0)
+    #Вычисление L
     zero_count = S_prime.count(0)
-    L = zero_count - 1  # вычитаем первый 0 (начальное состояние)
+    L = zero_count - 1
 
     if L == 0:
         return False, [], (
@@ -95,7 +92,7 @@ def random_excursions_variant_test(bit_sequence):
         )
 
     # Вычисление ξ_j — количество посещений каждого состояния j
-    # Состояния: -9, -8, ..., -1, 1, 2, ..., 9
+    # Состояния: -9 ... 9
     states = list(range(-9, 0)) + list(range(1, 10))  # 18 состояний
     xi = {j: 0 for j in states}
     for val in S_prime:
@@ -107,14 +104,13 @@ def random_excursions_variant_test(bit_sequence):
     results = []
     all_passed = True
     for j in states:
-        xi_j = xi[j]
+        xi_j = xi[j] # кол-во посещений
         denominator = math.sqrt(2 * L * (4 * abs(j) - 2))
         if denominator == 0:
-            # Теоретически невозможно при L > 0, но защищаемся
             Y_j = float('inf')
             passed_j = False
         else:
-            Y_j = abs(xi_j - L) / denominator
+            Y_j = abs(xi_j - L) / denominator # разница между фактическим и ожидаемым количеством посещений
             passed_j = Y_j <= THRESHOLD
         if not passed_j:
             all_passed = False
@@ -139,7 +135,7 @@ def random_excursions_variant_test(bit_sequence):
 
 
 
-#генерация псевдослучайной последовательности
+
 def generate_sequence(length):
     return ''.join(str(random.randint(0, 1)) for _ in range(length))
 
@@ -186,13 +182,13 @@ def run_tests():
 
         # Частотный тест
         freq_passed, freq_stat, freq_msg = frequency_test(sequence)
-        result_text.insert(tk.END, "\n--- ЧАСТОТНЫЙ ТЕСТ ---\n")
+        result_text.insert(tk.END, "\nЧАСТОТНЫЙ ТЕСТ\n")
         result_text.insert(tk.END, freq_msg + "\n")
 
         if not freq_passed:
             result_text.insert(
                 tk.END,
-                "\n⚠️ Частотный тест не пройден. Дальнейшие тесты не выполняются.\n"
+                "\nЧастотный тест не пройден. Дальнейшие тесты не выполняются.\n"
             )
             result_text.config(state=tk.DISABLED)
             status_label.config(text="Статус: Готово (Частотный тест провален)")
@@ -200,7 +196,7 @@ def run_tests():
 
         # Тест на последовательности одинаковых бит
         runs_passed, runs_stat, runs_msg = runs_test(sequence)
-        result_text.insert(tk.END, "\n--- ТЕСТ НА ПОСЛЕДОВАТЕЛЬНОСТЬ ОДИНАКОВЫХ БИТ ---\n")
+        result_text.insert(tk.END, "\nТЕСТ НА ПОСЛЕДОВАТЕЛЬНОСТЬ ОДИНАКОВЫХ БИТ\n")
         result_text.insert(tk.END, runs_msg + "\n")
 
         # Расширенный тест на произвольные отклонения
@@ -208,14 +204,14 @@ def run_tests():
         root.update()
 
         rev_passed, rev_results, rev_msg = random_excursions_variant_test(sequence)
-        result_text.insert(tk.END, "\n--- РАСШИРЕННЫЙ ТЕСТ НА ПРОИЗВОЛЬНЫЕ ОТКЛОНЕНИЯ ---\n")
+        result_text.insert(tk.END, "\nРАСШИРЕННЫЙ ТЕСТ НА ПРОИЗВОЛЬНЫЕ ОТКЛОНЕНИЯ\n")
         result_text.insert(tk.END, rev_msg + "\n")
 
-        # анализ
+
         all_ok = freq_passed and runs_passed and rev_passed
         result_text.insert(tk.END, "\n" + "=" * 50 + "\n")
         if all_ok:
-            result_text.insert(tk.END, "✅ Последовательность успешно прошла все три теста.\n")
+            result_text.insert(tk.END, "Последовательность успешно прошла все три теста.\n")
         else:
             failed_tests = []
             if not freq_passed:
@@ -324,7 +320,7 @@ def clear_all():
 
 
 root = tk.Tk()
-root.title("Лабораторная работа №1 — Тестирование ПСП")
+root.title("Лаб 1")
 root.geometry("900x700")
 root.minsize(800, 600)
 
