@@ -26,7 +26,7 @@ def frequency_test(bit_sequence):
 
     passed = statistic <= THRESHOLD
     msg = f"Статистика S = {statistic:.6f}. "
-    msg += "Тест пройден." if passed else "Тест НЕ пройден."
+    msg += "Тест пройден." if passed else "Тест не пройден."
     return passed, statistic, msg
 
 # последовательность одинаковых бит
@@ -72,13 +72,13 @@ def random_excursions_variant_test(bit_sequence):
     X = [2 * int(bit) - 1 for bit in bit_sequence]
 
     # Вычисление кумулятивных сумм S_i
-    cumulative = []
+    cumulative = [] # -1 1 1 -1 1 [-1, 0, 1, 0, 1]
     s = 0
     for xi in X:
         s += xi
         cumulative.append(s)
 
-    # Формирование последовательности S' = [0, S1, S2, ..., Sn, 0]
+    # формирование последовательности S'
     S_prime = [0] + cumulative + [0]
 
     #Вычисление L
@@ -91,16 +91,15 @@ def random_excursions_variant_test(bit_sequence):
             "Тест не применим — попробуйте более длинную последовательность."
         )
 
-    # Вычисление ξ_j — количество посещений каждого состояния j
-    # Состояния: -9 ... 9
-    states = list(range(-9, 0)) + list(range(1, 10))  # 18 состояний
+    # Вычисление E_j — количество посещений каждого состояния j
+    states = list(range(-9, 0)) + list(range(1, 10))
     xi = {j: 0 for j in states}
     for val in S_prime:
         if val in xi:
             xi[val] += 1
 
     # Вычисление статистик Y_j для каждого состояния
-    # Y_j = |ξ_j - L| / sqrt(2 * L * (4 * |j| - 2))
+    # Y_j = |E_j - L| / sqrt(2 * L * (4 * |j| - 2))
     results = []
     all_passed = True
     for j in states:
@@ -110,7 +109,7 @@ def random_excursions_variant_test(bit_sequence):
             Y_j = float('inf')
             passed_j = False
         else:
-            Y_j = abs(xi_j - L) / denominator # разница между фактическим и ожидаемым количеством посещений
+            Y_j = abs(xi_j - L) / denominator
             passed_j = Y_j <= THRESHOLD
         if not passed_j:
             all_passed = False
@@ -222,7 +221,7 @@ def run_tests():
                 failed_tests.append("Расширенный тест")
             result_text.insert(
                 tk.END,
-                f"❌ Последовательность НЕ прошла: {', '.join(failed_tests)}.\n"
+                f"Последовательность не прошла: {', '.join(failed_tests)}.\n"
             )
 
         result_text.config(state=tk.DISABLED)

@@ -10,7 +10,7 @@ THRESHOLD = 1.82138636
 
 
 
-# ГЕНЕРАТОР ПАРКА-МИЛЛЕРА
+# генератор парка-миллера
 PM_A = 16807          # Множитель a = 7^5
 PM_M = 2147483647     # Модуль m = 2^31 - 1
 
@@ -23,11 +23,11 @@ def park_miller_generator(seed: int, length: int) -> str:
     x = seed
     for _ in range(length):
         x = (PM_A * x) % PM_M
-        bits.append(str(x & 1))  # Берём младший бит
+        bits.append(str(x & 1))
     return ''.join(bits)
 
 
-# ГЕНЕРАТОР BBS (Blum-Blum-Shub)
+# bbs
 def is_prime(n: int) -> bool:
     if n < 2:
         return False
@@ -67,11 +67,11 @@ def bbs_generator(p: int, q: int, seed: int, length: int) -> str:
         raise ValueError(f"seed должен быть в диапазоне [1, {N - 1}]")
 
     bits = []
-    u = (seed * seed) % N  # u_0 = seed^2 mod N
+    u = (seed * seed) % N
 
     for _ in range(length):
-        u = (u * u) % N           # u_i = u_{i-1}^2 mod N
-        bits.append(str(u % 2))   # x_i = u_i mod 2
+        u = (u * u) % N
+        bits.append(str(u % 2))
 
     return ''.join(bits)
 
@@ -284,7 +284,7 @@ def run_tests():
         if not freq_passed:
             result_text.insert(
                 tk.END,
-                "\n⚠️ Частотный тест не пройден. Дальнейшие тесты не выполняются.\n"
+                "\nЧастотный тест не пройден. Дальнейшие тесты не выполняются.\n"
             )
             result_text.config(state=tk.DISABLED)
             status_label.config(text="Статус: Готово (Частотный тест провален)")
@@ -292,7 +292,7 @@ def run_tests():
 
         # Тест на серии
         runs_passed, runs_stat, runs_msg = runs_test(sequence)
-        result_text.insert(tk.END, "\n--- ТЕСТ НА ПОСЛЕДОВАТЕЛЬНОСТЬ ОДИНАКОВЫХ БИТ ---\n")
+        result_text.insert(tk.END, "\nТЕСТ НА ПОСЛЕДОВАТЕЛЬНОСТЬ ОДИНАКОВЫХ БИТ\n")
         result_text.insert(tk.END, runs_msg + "\n")
 
         # Расширенный тест
@@ -300,14 +300,14 @@ def run_tests():
         root.update()
 
         rev_passed, rev_results, rev_msg = random_excursions_variant_test(sequence)
-        result_text.insert(tk.END, "\n--- РАСШИРЕННЫЙ ТЕСТ НА ПРОИЗВОЛЬНЫЕ ОТКЛОНЕНИЯ ---\n")
+        result_text.insert(tk.END, "\nРАСШИРЕННЫЙ ТЕСТ НА ПРОИЗВОЛЬНЫЕ ОТКЛОНЕНИЯ\n")
         result_text.insert(tk.END, rev_msg + "\n")
 
         # Итог
         all_ok = freq_passed and runs_passed and rev_passed
         result_text.insert(tk.END, "\n" + "=" * 50 + "\n")
         if all_ok:
-            result_text.insert(tk.END, "✅ Последовательность успешно прошла все три теста.\n")
+            result_text.insert(tk.END, "Последовательность успешно прошла все три теста.\n")
         else:
             failed_tests = []
             if not freq_passed:
@@ -318,7 +318,7 @@ def run_tests():
                 failed_tests.append("Расширенный тест")
             result_text.insert(
                 tk.END,
-                f"❌ Последовательность НЕ прошла: {', '.join(failed_tests)}.\n"
+                f"Последовательность не прошла: {', '.join(failed_tests)}.\n"
             )
 
         result_text.config(state=tk.DISABLED)
@@ -390,7 +390,7 @@ def on_generator_switch():
         bbs_frame.pack(fill=tk.X)
 
 root = tk.Tk()
-root.title("Лабораторная работа №2 — Генераторы ПСП")
+root.title("лаб 2")
 root.geometry("900x700")
 root.minsize(800, 600)
 
