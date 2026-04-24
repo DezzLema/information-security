@@ -20,7 +20,7 @@ def frequency_test(bit_sequence):
 
     Sn = sum(X)
 
-    # S = |Sn| / sqrt(n)
+
     statistic = abs(Sn) / math.sqrt(n)
 
 
@@ -35,7 +35,7 @@ def runs_test(bit_sequence):
     if n == 0:
         return False, 0, "Последовательность пуста"
 
-    # Вычисление частоты единиц π
+    # Вычисление частоты единиц
     ones_count = bit_sequence.count('1')
     pi = ones_count / n
 
@@ -44,13 +44,12 @@ def runs_test(bit_sequence):
         return False, float('inf'), "Последовательность состоит только из 0 или только из 1. Тест не применим."
 
 
-    # Вычисление Vn
+    # Вычисление количества цепочек
     Vn = 1
     for i in range(n - 1):
         if bit_sequence[i] != bit_sequence[i + 1]:
             Vn += 1
 
-    #Вычисление статистики S
     numerator = abs(Vn - 2 * n * pi * (1 - pi))
     denominator = 2 * math.sqrt(2 * n * pi * (1 - pi))
     statistic = numerator / denominator
@@ -99,7 +98,6 @@ def random_excursions_variant_test(bit_sequence):
             xi[val] += 1
 
     # Вычисление статистик Y_j для каждого состояния
-    # Y_j = |E_j - L| / sqrt(2 * L * (4 * |j| - 2))
     results = []
     all_passed = True
     for j in states:
