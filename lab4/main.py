@@ -1,11 +1,12 @@
 import tkinter as tk
 from tkinter import filedialog, messagebox, scrolledtext
-import math
 import threading
+import struct
 import os
 
 PM_A = 16807
 PM_M = 2147483647
+BLOCK_SIZE = 5
 
 S_TABLE = [
     0xa3, 0xd7, 0x09, 0x83, 0xf8, 0x48, 0xf6, 0xf4, 0xb3, 0x21, 0x15, 0x78, 0x99, 0xb1, 0xaf, 0xf9,
@@ -41,257 +42,169 @@ def mahash8(data: bytes) -> int:
     length = len(data)
     hash1 = length & 0xFFFFFFFF
     hash2 = length & 0xFFFFFFFF
-
-    for i, byte in enumerate(data):  # для каждого байта
+    for i, byte in enumerate(data):
         idx = (byte + i) & 255
         val = S_TABLE[idx]
-
         hash1 = (hash1 + val) & 0xFFFFFFFF
         hash1 = lrot14((hash1 + ((hash1 << 6) ^ (hash1 >> 11))) & 0xFFFFFFFF)
-
         hash2 = (hash2 + val) & 0xFFFFFFFF
         hash2 = rrot14((hash2 + ((hash2 << 6) ^ (hash2 >> 11))) & 0xFFFFFFFF)
-
-        sh1 = hash1
-        sh2 = hash2
+        sh1, sh2 = hash1, hash2
         hash1 = (((sh1 >> 16) & 0xffff) | ((sh2 & 0xffff) << 16)) & 0xFFFFFFFF
         hash2 = (((sh2 >> 16) & 0xffff) | ((sh1 & 0xffff) << 16)) & 0xFFFFFFFF
-
     return (hash1 ^ hash2) & 0xFFFFFFFF
 
 
-def park_miller_generator(seed: int, length: int) -> bytes:
-    result = bytearray()
-    x = seed
-    byte_val = 0
-    bit_count = 0
-    needed = length
-
-    while needed > 0:
-        x = (PM_A * x) % PM_M
-        byte_val = (byte_val << 1) | (x & 1)
-        bit_count += 1
-        if bit_count == 8:
-            result.append(byte_val)
-            byte_val = 0
-            bit_count = 0
-            needed -= 1
-
-    return bytes(result)
-
-
-def is_prime(n: int) -> bool:
-    if n < 2:
-        return False
-    if n == 2:
-        return True
-    if n % 2 == 0:
-        return False
-    for i in range(3, int(math.isqrt(n)) + 1, 2):
-        if n % i == 0:
-            return False
-    return True
-
-
-def gcd(a: int, b: int) -> int:
-    while b:
-        a, b = b, a % b
-    return a
-
-
-def bbs_generator(p: int, q: int, seed: int, length: int) -> bytes:
-    if not is_prime(p):
-        raise ValueError(f"p = {p} не является простым числом")
-    if not is_prime(q):
-        raise ValueError(f"q = {q} не является простым числом")
-    if p % 4 != 3:
-        raise ValueError(f"p = {p} не удовлетворяет условию p ≡ 3 (mod 4)")
-    if q % 4 != 3:
-        raise ValueError(f"q = {q} не удовлетворяет условию q ≡ 3 (mod 4)")
-    if p == q:
-        raise ValueError("p и q должны быть различными числами")
-
-    N = p * q
-    if gcd(seed, N) != 1:
-        raise ValueError(f"seed не взаимно прост с N = {N}")
-
-    result = bytearray()
-    u = (seed * seed) % N
-    byte_val = 0
-    bit_count = 0
-    needed = length
-
-    while needed > 0:
-        u = (u * u) % N
-        byte_val = (byte_val << 1) | (u % 2)
-        bit_count += 1
-        if bit_count == 8:
-            result.append(byte_val)
-            byte_val = 0
-            bit_count = 0
-            needed -= 1
-
-    return bytes(result)
-
-
-def stream_cipher(data: bytes, key_seed: int, generator: str,
-                  bbs_p: int = 383, bbs_q: int = 503,
-                  progress_callback=None) -> bytes:
-    chunk_size = 65536 # кбайт
-    total = len(data)
-    result = bytearray()
-
-    offset = 0
-    processed = 0
-
-    if generator == "park_miller":
-        x = key_seed
-        while offset < total:
-            chunk = data[offset:offset + chunk_size]
-            keystream = bytearray()
-            for _ in range(len(chunk)):
-                x = (PM_A * x) % PM_M
-                byte_val = 0
-                for _ in range(8):
-                    x = (PM_A * x) % PM_M
-                    byte_val = (byte_val << 1) | (x & 1)
-                keystream.append(byte_val)
-            for b, k in zip(chunk, keystream):
-                result.append(b ^ k)
-            offset += chunk_size
-            processed += len(chunk)
-            if progress_callback:
-                progress_callback(processed, total)
-    else:
-        N = bbs_p * bbs_q
-        u = (key_seed * key_seed) % N
-        while offset < total:
-            chunk = data[offset:offset + chunk_size]
-            keystream = bytearray()
-            for _ in range(len(chunk)):
-                byte_val = 0
-                for _ in range(8):
-                    u = (u * u) % N
-                    byte_val = (byte_val << 1) | (u % 2)
-                keystream.append(byte_val)
-            for b, k in zip(chunk, keystream):
-                result.append(b ^ k)
-            offset += chunk_size
-            processed += len(chunk)
-            if progress_callback:
-                progress_callback(processed, total)
-
-    return bytes(result)
-
-
 def password_to_seed(password: str) -> int:
-    data = password.encode("utf-8")
-    h = mahash8(data)
+    h = mahash8(password.encode("utf-8"))
     seed = h % (PM_M - 1)
-    if seed == 0:
-        seed = 1
-    return seed
+    return seed if seed != 0 else 1
 
 
-def on_generator_switch():
-    if generator_var.get() == "park_miller":
-        bbs_frame.pack_forget()
-        pm_frame.pack(fill=tk.X, pady=2)
-    else:
-        pm_frame.pack_forget()
-        bbs_frame.pack(fill=tk.X, pady=2)
+def pm_next(x: int) -> int:
+    return (PM_A * x) % PM_M
+
+
+def det(mat, n):
+    if n == 1:
+        return mat[0][0]
+    if n == 2:
+        return mat[0][0] * mat[1][1] - mat[0][1] * mat[1][0]
+    result = 0
+    for c in range(n):
+        sub = [[mat[r][cc] for cc in range(n) if cc != c] for r in range(1, n)]
+        result += ((-1) ** c) * mat[0][c] * det(sub, n - 1)
+    return result
+
+
+def generate_matrix(seed: int, size: int):
+    x = seed
+    while True:
+        mat = []
+        for _ in range(size):
+            row = []
+            for _ in range(size):
+                x = pm_next(x)
+                row.append((x % 251) + 1)
+            mat.append(row)
+        d = det(mat, size)
+        if d != 0 and abs(d) < 2 ** 31:
+            return mat, x
+        x = pm_next(x)
+
+
+def cofactor_matrix(mat, n):
+    cof = []
+    for r in range(n):
+        row = []
+        for c in range(n):
+            sub = [[mat[rr][cc] for cc in range(n) if cc != c] for rr in range(n) if rr != r]
+            row.append(((-1) ** (r + c)) * det(sub, n - 1))
+        cof.append(row)
+    return cof
+
+
+def transpose_mat(mat, n):
+    return [[mat[c][r] for c in range(n)] for r in range(n)]
+
+
+def mat_vec_mul(mat, vec, n):
+    return [sum(mat[r][c] * vec[c] for c in range(n)) for r in range(n)]
+
+
+def decrypt_block_mat(adj_t, d, vec, n):
+    return [round(sum(adj_t[r][c] * vec[c] for c in range(n)) / d) for r in range(n)]
+
+
+def xor_blocks(a: list, b: list) -> list:
+    return [x ^ y for x, y in zip(a, b)]
+
+
+def pad_data(data: bytes, block_size: int) -> bytes:
+    pad_len = block_size - (len(data) % block_size)
+    return data + bytes([pad_len] * pad_len)
+
+
+def unpad_data(data: bytes, block_size: int) -> bytes:
+    if not data:
+        raise ValueError("Пустые данные")
+    pad_len = data[-1]
+    if pad_len == 0 or pad_len > block_size:
+        raise ValueError("Неверный padding — возможно, неправильный пароль")
+    return data[:-pad_len]
+
+
+def make_iv(seed: int, block_size: int) -> list:
+    x = seed
+    iv = []
+    for _ in range(block_size):
+        x = pm_next(x)
+        iv.append(x % 256)
+    return iv
+
+
+def encrypt_cbc(data: bytes, seed: int, progress_callback=None) -> bytes:
+    n = BLOCK_SIZE
+    padded = pad_data(data, n)
+    num_blocks = len(padded) // n
+    iv = make_iv(seed, n)
+    prev = iv
+    x = seed
+    result = bytearray(bytes(iv))
+    for i in range(num_blocks):
+        block = list(padded[i * n:(i + 1) * n])
+        xored = xor_blocks(block, prev)
+        mat, x = generate_matrix(x, n)
+        enc = mat_vec_mul(mat, xored, n)
+        for v in enc:
+            result.extend(struct.pack(">i", v))
+        prev = [v % 256 for v in enc]
+        if progress_callback:
+            progress_callback(i + 1, num_blocks)
+    return bytes(result)
+
+
+def decrypt_cbc(data: bytes, seed: int, progress_callback=None) -> bytes:
+    n = BLOCK_SIZE
+    enc_block_size = n * 4
+    if len(data) < n:
+        raise ValueError("Файл слишком короткий")
+    iv = list(data[:n])
+    ciphertext = data[n:]
+    if len(ciphertext) % enc_block_size != 0:
+        raise ValueError("Длина шифртекста повреждена — возможно, неправильный пароль")
+    num_blocks = len(ciphertext) // enc_block_size
+    prev = iv
+    x = seed
+    result = bytearray()
+    matrices = []
+    tmp_x = x
+    for _ in range(num_blocks):
+        mat, tmp_x = generate_matrix(tmp_x, n)
+        matrices.append(mat)
+    for i in range(num_blocks):
+        raw = ciphertext[i * enc_block_size:(i + 1) * enc_block_size]
+        enc = [struct.unpack(">i", raw[j * 4:(j + 1) * 4])[0] for j in range(n)]
+        mat = matrices[i]
+        d = det(mat, n)
+        cof = cofactor_matrix(mat, n)
+        adj_t = transpose_mat(cof, n)
+        dec = decrypt_block_mat(adj_t, d, enc, n)
+        plain = xor_blocks(dec, prev)
+        result.extend(bytes([v % 256 for v in plain]))
+        prev = [v % 256 for v in enc]
+        if progress_callback:
+            progress_callback(i + 1, num_blocks)
+    return unpad_data(bytes(result), n)
 
 
 def update_hash_display(*args):
-    pw = password_entry.get()
+    pw = password_var.get()
     if pw:
         h = mahash8(pw.encode("utf-8"))
         hash_label.config(text=f"MaHash8: 0x{h:08X}  (seed: {password_to_seed(pw)})")
     else:
         hash_label.config(text="MaHash8: —")
-
-
-def do_cipher(mode: str):
-    input_path = input_path_var.get().strip()
-    output_path = output_path_var.get().strip()
-    password = password_entry.get()
-
-    if not input_path:
-        messagebox.showerror("Ошибка", "Укажите входной файл.")
-        return
-    if not output_path:
-        messagebox.showerror("Ошибка", "Укажите выходной файл.")
-        return
-    if not password:
-        messagebox.showerror("Ошибка", "Введите пароль.")
-        return
-
-    gen = generator_var.get()
-    seed = password_to_seed(password)
-
-    bbs_p_val = bbs_q_val = None
-    if gen == "bbs":
-        try:
-            bbs_p_val = int(bbs_p_entry.get())
-            bbs_q_val = int(bbs_q_entry.get())
-        except ValueError:
-            messagebox.showerror("Ошибка", "Параметры p и q должны быть целыми числами.")
-            return
-
-    encrypt_btn.config(state=tk.DISABLED)
-    decrypt_btn.config(state=tk.DISABLED)
-    progress_var.set(0)
-    log_text.config(state=tk.NORMAL)
-    log_text.delete("1.0", tk.END)
-
-    verb = "Шифрование" if mode == "encrypt" else "Дешифрование"
-    log_text.insert(tk.END, f"{verb} начато...\n")
-    log_text.insert(tk.END, f"Генератор: {'Парка-Миллера' if gen == 'park_miller' else 'BBS'}\n")
-    log_text.insert(tk.END, f"Хеш пароля (MaHash8): 0x{mahash8(password.encode()):08X}\n")
-    log_text.insert(tk.END, f"Seed генератора: {seed}\n")
-    log_text.insert(tk.END, f"Входной файл: {os.path.basename(input_path)}\n\n")
-    log_text.config(state=tk.DISABLED)
-
-    def run():
-        try:
-            with open(input_path, "rb") as f:
-                data = f.read()
-
-            file_size = len(data)
-            status_label.config(text=f"Статус: {verb}... (0 / {file_size} байт)")
-
-            def progress_cb(done, total):
-                pct = int(done / total * 100) if total else 100
-                progress_var.set(pct)
-                status_label.config(text=f"Статус: {verb}... ({done} / {total} байт)")
-                root.update_idletasks()
-
-            result = stream_cipher(data, seed, gen, bbs_p_val, bbs_q_val, progress_cb)
-
-            with open(output_path, "wb") as f:
-                f.write(result)
-
-            progress_var.set(100)
-            log_text.config(state=tk.NORMAL)
-            log_text.insert(tk.END, f"{verb} завершено.\n")
-            log_text.insert(tk.END, f"Обработано байт: {file_size}\n")
-            log_text.insert(tk.END, f"Результат сохранён: {os.path.basename(output_path)}\n")
-            log_text.config(state=tk.DISABLED)
-            status_label.config(text=f"Статус: Готово — {file_size} байт обработано")
-
-        except Exception as e:
-            messagebox.showerror("Ошибка", str(e))
-            status_label.config(text="Статус: Ошибка")
-            log_text.config(state=tk.NORMAL)
-            log_text.insert(tk.END, f"Ошибка: {e}\n")
-            log_text.config(state=tk.DISABLED)
-        finally:
-            encrypt_btn.config(state=tk.NORMAL)
-            decrypt_btn.config(state=tk.NORMAL)
-
-    t = threading.Thread(target=run)
-    t.daemon = True
-    t.start()
 
 
 def browse_input():
@@ -311,40 +224,95 @@ def browse_output():
         output_path_var.set(path)
 
 
+def do_cipher(mode: str):
+    input_path = input_path_var.get().strip()
+    output_path = output_path_var.get().strip()
+    password = password_var.get()
+
+    if not input_path:
+        messagebox.showerror("Ошибка", "Укажите входной файл.")
+        return
+    if not output_path:
+        messagebox.showerror("Ошибка", "Укажите выходной файл.")
+        return
+    if not password:
+        messagebox.showerror("Ошибка", "Введите пароль.")
+        return
+
+    seed = password_to_seed(password)
+
+    encrypt_btn.config(state=tk.DISABLED)
+    decrypt_btn.config(state=tk.DISABLED)
+    progress_var.set(0)
+    log_text.config(state=tk.NORMAL)
+    log_text.delete("1.0", tk.END)
+
+    verb = "Шифрование" if mode == "encrypt" else "Дешифрование"
+    log_text.insert(tk.END, f"{verb} начато...\n")
+    log_text.insert(tk.END, f"Алгоритм: матричное шифрование, блок {BLOCK_SIZE} байт, режим CBC\n")
+    log_text.insert(tk.END, f"Матрица: {BLOCK_SIZE}x{BLOCK_SIZE}, элементы из генератора Парка-Миллера\n")
+    log_text.insert(tk.END, f"Хеш пароля (MaHash8): 0x{mahash8(password.encode()):08X}\n")
+    log_text.insert(tk.END, f"Seed: {seed}\n")
+    log_text.insert(tk.END, f"Входной файл: {os.path.basename(input_path)}\n\n")
+    log_text.config(state=tk.DISABLED)
+
+    def run():
+        try:
+            with open(input_path, "rb") as f:
+                data = f.read()
+
+            file_size = len(data)
+            status_label.config(text=f"Статус: {verb}... (0 блоков)")
+
+            def progress_cb(done, total):
+                pct = int(done / total * 100) if total else 100
+                progress_var.set(pct)
+                status_label.config(text=f"Статус: {verb}... ({done} / {total} блоков)")
+                root.update_idletasks()
+
+            if mode == "encrypt":
+                result = encrypt_cbc(data, seed, progress_cb)
+            else:
+                result = decrypt_cbc(data, seed, progress_cb)
+
+            with open(output_path, "wb") as f:
+                f.write(result)
+
+            progress_var.set(100)
+            log_text.config(state=tk.NORMAL)
+            log_text.insert(tk.END, f"{verb} завершено.\n")
+            log_text.insert(tk.END, f"Входной размер: {file_size} байт\n")
+            log_text.insert(tk.END, f"Выходной размер: {len(result)} байт\n")
+            log_text.insert(tk.END, f"Результат сохранён: {os.path.basename(output_path)}\n")
+            log_text.config(state=tk.DISABLED)
+            status_label.config(text=f"Статус: Готово — {file_size} байт обработано")
+
+        except Exception as e:
+            messagebox.showerror("Ошибка", str(e))
+            status_label.config(text="Статус: Ошибка")
+            log_text.config(state=tk.NORMAL)
+            log_text.insert(tk.END, f"Ошибка: {e}\n")
+            log_text.config(state=tk.DISABLED)
+        finally:
+            encrypt_btn.config(state=tk.NORMAL)
+            decrypt_btn.config(state=tk.NORMAL)
+
+    t = threading.Thread(target=run)
+    t.daemon = True
+    t.start()
+
+
 root = tk.Tk()
-root.title("Лаб 3")
+root.title("Лаб 4 — Матричный шифр (CBC) + MaHash8")
 root.geometry("820x620")
 root.minsize(700, 500)
 
-top_frame = tk.Frame(root, padx=10, pady=8)
-top_frame.pack(fill=tk.X)
+info_frame = tk.Frame(root, padx=10, pady=8)
+info_frame.pack(fill=tk.X)
 
-tk.Label(top_frame, text="Генератор:").pack(side=tk.LEFT)
-generator_var = tk.StringVar(value="park_miller")
-tk.Radiobutton(top_frame, text="Парка-Миллера",
-               variable=generator_var, value="park_miller",
-               command=on_generator_switch).pack(side=tk.LEFT, padx=(4, 8))
-tk.Radiobutton(top_frame, text="BBS",
-               variable=generator_var, value="bbs",
-               command=on_generator_switch).pack(side=tk.LEFT, padx=(0, 16))
-
-pm_frame = tk.Frame(root, padx=10)
-tk.Label(pm_frame, text="[ a = 16807 = 7⁵,  m = 2147483647 = 2³¹ − 1 ]",
+tk.Label(info_frame,
+         text=f"[ Матричное шифрование {BLOCK_SIZE}x{BLOCK_SIZE}, блок {BLOCK_SIZE} байт, режим CBC, матрица из генератора Парка-Миллера ]",
          fg="gray").pack(side=tk.LEFT)
-
-bbs_frame = tk.Frame(root, padx=10)
-tk.Label(bbs_frame, text="p (простое, p≡3 mod 4):").grid(row=0, column=0, sticky="e", padx=(0, 4))
-bbs_p_entry = tk.Entry(bbs_frame, width=10)
-bbs_p_entry.grid(row=0, column=1, sticky="w", padx=(0, 14))
-bbs_p_entry.insert(0, "383")
-tk.Label(bbs_frame, text="q (простое, q≡3 mod 4):").grid(row=0, column=2, sticky="e", padx=(0, 4))
-bbs_q_entry = tk.Entry(bbs_frame, width=10)
-bbs_q_entry.grid(row=0, column=3, sticky="w")
-bbs_q_entry.insert(0, "503")
-tk.Label(bbs_frame, text="[ N = p·q,  uᵢ = uᵢ₋₁² mod N,  xᵢ = uᵢ mod 2 ]",
-         fg="gray").grid(row=1, column=0, columnspan=4, sticky="w", pady=(2, 0))
-
-pm_frame.pack(fill=tk.X, pady=2)
 
 pw_frame = tk.Frame(root, padx=10, pady=6)
 pw_frame.pack(fill=tk.X)
